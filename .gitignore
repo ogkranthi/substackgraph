@@ -17,5 +17,8 @@ artifacts/
 # pyvis dumps its vendored JS assets (vis.js, tom-select) next to the CWD when rendering
 /lib/
 
+# Local environment file (compose secrets like the Cloudflare Tunnel token)
+.env
+
 # But DO keep committed test fixtures even if they are sqlite files
 !tests/fixtures/

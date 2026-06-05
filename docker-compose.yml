@@ -1,0 +1,33 @@
+# One-command live stack for substackgraph.com.
+#
+#   cp .env.example .env        # then paste your Cloudflare Tunnel token
+#   docker compose up -d        # app + Cloudflare Tunnel → https://substackgraph.com
+#
+# Without a TUNNEL_TOKEN the app still runs locally on http://localhost:8000 (the
+# cloudflared service simply fails its connection and retries — harmless for local use).
+services:
+  app:
+    build: .
+    image: ghcr.io/ogkranthi/substackgraph:latest
+    restart: unless-stopped
+    environment:
+      - SUBSTACKGRAPH_DB=/data/cache.sqlite
+      - SUBSTACKGRAPH_SEED=${SUBSTACKGRAPH_SEED:-https://theairuntime.substack.com}
+      - ALLOW_LIVE_CRAWL=${ALLOW_LIVE_CRAWL:-0}
+      - LOAD_DEMO_ON_START=${LOAD_DEMO_ON_START:-1}
+    volumes:
+      - substackgraph-data:/data
+    ports:
+      - "8000:8000"   # for local access; Cloudflare reaches the app over the internal network
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
+    depends_on:
+      - app
+
+volumes:
+  substackgraph-data:
