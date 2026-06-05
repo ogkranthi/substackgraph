@@ -10,13 +10,15 @@ from pathlib import Path
 import networkx as nx
 
 
-def render_graph(graph: nx.DiGraph, title: str, out_path: str | Path) -> Path:
+def _build_network(graph: nx.DiGraph, title: str):
+    """Construct a pyvis Network from a graph. Uses a remote CDN for vis-network assets so
+    the output is a single self-contained file with no local `lib/` dump — important for
+    serving over the web."""
     from pyvis.network import Network
 
-    out = Path(out_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    net = Network(height="800px", width="100%", directed=True, heading=title)
+    net = Network(
+        height="800px", width="100%", directed=True, heading=title, cdn_resources="remote"
+    )
     net.barnes_hut()  # force-directed layout
 
     for node, data in graph.nodes(data=True):
@@ -31,5 +33,16 @@ def render_graph(graph: nx.DiGraph, title: str, out_path: str | Path) -> Path:
     for src, dst in graph.edges():
         net.add_edge(str(src), str(dst))
 
-    net.write_html(str(out), notebook=False, open_browser=False)
+    return net
+
+
+def graph_to_html(graph: nx.DiGraph, title: str) -> str:
+    """Render a graph to a self-contained HTML string (for serving dynamically)."""
+    return _build_network(graph, title).generate_html(notebook=False)
+
+
+def render_graph(graph: nx.DiGraph, title: str, out_path: str | Path) -> Path:
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(graph_to_html(graph, title), encoding="utf-8")
     return out

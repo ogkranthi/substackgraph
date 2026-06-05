@@ -1,12 +1,14 @@
 """Central configuration. Constants only — no logic, no side effects on import."""
 
+import os
 from pathlib import Path
 
 # Project root (this file is src/substackgraph/config.py → parents[2] is the repo root).
 ROOT = Path(__file__).resolve().parents[2]
 
 ARTIFACTS = ROOT / "artifacts"
-DB_PATH = ARTIFACTS / "cache.sqlite"
+# Cache path is overridable so a deployment can point at a mounted volume.
+DB_PATH = Path(os.getenv("SUBSTACKGRAPH_DB", ARTIFACTS / "cache.sqlite"))
 LOG_DIR = ARTIFACTS / "logs"
 LOG_PATH = LOG_DIR / "decisions.jsonl"
 GRAPHS_DIR = ARTIFACTS / "graphs"

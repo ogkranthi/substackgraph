@@ -19,9 +19,16 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
+web = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+]
 
 [project.scripts]
 substackgraph = "substackgraph.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+substackgraph = ["data/*.json"]
