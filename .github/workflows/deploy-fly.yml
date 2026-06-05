@@ -38,15 +38,34 @@ jobs:
         run: |
           if [ "${{ github.ref_name }}" = "main" ]; then
             echo "config=fly.toml" >> "$GITHUB_OUTPUT"
+            echo "app=substackgraph" >> "$GITHUB_OUTPUT"
             echo "name=production" >> "$GITHUB_OUTPUT"
           else
             echo "config=fly.staging.toml" >> "$GITHUB_OUTPUT"
+            echo "app=substackgraph-staging" >> "$GITHUB_OUTPUT"
             echo "name=staging" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up flyctl
         if: steps.guard.outputs.skip == 'false'
         uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Bootstrap app + cache volume (idempotent, first run only)
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.target.outputs.app }}
+          REGION: ${{ vars.FLY_REGION || 'iad' }}
+          ORG: ${{ vars.FLY_ORG || 'personal' }}
+        run: |
+          # Create the app if it doesn't exist yet (so no manual flyctl needed).
+          if ! flyctl apps list | awk '{print $1}' | grep -qx "$APP"; then
+            flyctl apps create "$APP" --org "$ORG"
+          fi
+          # Ensure exactly one persistent cache volume named "data" exists.
+          if ! flyctl volumes list -a "$APP" 2>/dev/null | grep -qw data; then
+            flyctl volumes create data -a "$APP" --region "$REGION" --size 1 --yes
+          fi
 
       - name: Deploy ${{ steps.target.outputs.name }}
         if: steps.guard.outputs.skip == 'false'

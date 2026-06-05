@@ -23,34 +23,50 @@ After a **one-time** setup, every `git push` deploys automatically via
 So changes always get exercised on a real staging URL before they reach the public domain.
 The SQLite cache lives on a persistent Fly volume per app, TLS is managed, Cloudflare sits in front.
 
-### One-time setup (~10 min, needs your accounts)
+### One-time setup — what *you* do (≈5 min, phone-friendly, no terminal)
 
-1. Install flyctl and sign in: `curl -L https://fly.io/install.sh | sh` then `fly auth login`.
-2. Create both apps (names match the `app` field in each toml; pick others if taken):
-   ```bash
-   fly apps create substackgraph           # production
-   fly apps create substackgraph-staging   # staging
-   ```
-3. Create a persistent cache volume in **each** app (name matches `[mounts].source`):
-   ```bash
-   fly volumes create data -a substackgraph         --region iad --size 1
-   fly volumes create data -a substackgraph-staging --region iad --size 1
-   ```
-4. Create an **org-scoped** deploy token (so the one secret can deploy both apps) and add it to
-   GitHub as a repository secret named `FLY_API_TOKEN`:
-   ```bash
-   fly tokens create org -x 999999h
-   ```
-   Add it under **GitHub → repo → Settings → Secrets and variables → Actions → New secret**.
-5. Point the domain through Cloudflare:
-   ```bash
-   fly certs add substackgraph.com
-   ```
-   Then in **Cloudflare → DNS** add a `CNAME` `substackgraph.com → substackgraph.fly.dev`
-   (proxied / orange cloud), and set **SSL/TLS mode to Full (strict)**.
+The deploy workflow **auto-creates the Fly apps and cache volumes** on its first run, so you only
+need to hand it credentials. All of this is doable from a browser on your phone:
 
-That's it. The first deploy runs on your next push (or trigger it now from the **Actions** tab
-via *Run workflow*). After this, **shipping is just a commit/push — fully phone-driven.**
+1. **Fly.io account.** Sign up at [fly.io](https://fly.io) and add a payment card (Fly requires a
+   card even within the free allowance — you won't be charged at this scale).
+2. **Deploy token → GitHub secret.** In the Fly dashboard, create an **org deploy token**
+   (Account → **Tokens**, or run `fly tokens create org -x 999999h` if you have the CLI). Copy it.
+   In GitHub: **repo → Settings → Secrets and variables → Actions → New repository secret**,
+   name it **`FLY_API_TOKEN`**, paste the token.
+3. *(Optional)* set repository **Variables** (same page, Variables tab) if your defaults differ:
+   `FLY_REGION` (default `iad`) and `FLY_ORG` (default `personal`).
+
+That's the whole Fly side. On your next push the workflow creates `substackgraph` +
+`substackgraph-staging`, their volumes, and deploys. You can also trigger it now from the
+**Actions** tab → *Deploy to Fly.io* → *Run workflow*.
+
+#### Manual alternative (if you prefer the CLI)
+
+<details><summary>Create the apps + volumes yourself instead of letting CI do it</summary>
+
+```bash
+curl -L https://fly.io/install.sh | sh && fly auth login
+fly apps create substackgraph
+fly apps create substackgraph-staging
+fly volumes create data -a substackgraph         --region iad --size 1
+fly volumes create data -a substackgraph-staging --region iad --size 1
+fly tokens create org -x 999999h   # add the output as the FLY_API_TOKEN secret
+```
+</details>
+
+### Domain — what *you* do in Cloudflare (dashboard only)
+
+After the **production** app's first deploy (it's live at `substackgraph.fly.dev`):
+
+1. **DNS:** in Cloudflare → **DNS → Records**, add a `CNAME`:
+   `substackgraph.com → substackgraph.fly.dev`, proxy **on** (orange cloud).
+2. **Certificate:** in the **Fly dashboard → app `substackgraph` → Certificates → Add Certificate**,
+   enter `substackgraph.com` (or run `fly certs add substackgraph.com`). Fly issues the cert.
+3. **SSL mode:** Cloudflare → **SSL/TLS → Overview → Full (strict)**.
+4. Then apply the **WAF + rate limiting** settings below (all in the Cloudflare dashboard).
+
+That's everything. From here, shipping is just a push — fully phone-driven.
 
 ### What's automatic from here on
 
