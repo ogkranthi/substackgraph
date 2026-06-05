@@ -12,7 +12,23 @@ Tunnel path keeps everything "in Cloudflare" with no separate cloud account.
 > (`ALLOW_LIVE_CRAWL=0`). The public site serves neighborhoods that are already cached.
 > Only enable on-demand crawling for trusted deployments, and keep the ≤1 req/sec limiter.
 
-## Build & run the container
+## Prebuilt image (no local build needed)
+
+CI builds and publishes the image to GHCR on every push to the default/dev branch, so you
+can pull and run it directly — no need to build from source on the server:
+
+```bash
+docker pull ghcr.io/ogkranthi/substackgraph:latest
+docker run -d --name substackgraph -p 8000:8000 \
+  -e LOAD_DEMO_ON_START=1 -v substackgraph-data:/data \
+  ghcr.io/ogkranthi/substackgraph:latest
+```
+
+> First time only: the GHCR package starts **private**. Either `docker login ghcr.io` with a
+> PAT, or flip the package to public under the repo's **Packages** settings for
+> unauthenticated `docker pull`.
+
+## Build from source instead
 
 ```bash
 docker build -t substackgraph .
