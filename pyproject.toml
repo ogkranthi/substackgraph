@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "substackgraph"
+version = "0.1.0"
+description = "A vertical AI agent that maps the Substack recommendation network and resolves publications to canonical entities."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "substack-api==1.3.0",
+    "pyvis>=0.3.2",
+    "networkx>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+substackgraph = "substackgraph.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

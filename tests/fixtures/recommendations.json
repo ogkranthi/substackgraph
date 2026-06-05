@@ -1,0 +1,62 @@
+{
+  "_comment": "Hand-built AI/tech neighborhood that guarantees all four Episode 1 corruption modes, offline. URLs are pre-normalized.",
+  "meta": {
+    "https://theairuntime.substack.com": {
+      "status": "ok",
+      "meta": {"id": 1, "subdomain": "theairuntime", "custom_domain": null, "author_id": 1, "name": "The AI Runtime", "aliases": []}
+    },
+
+    "https://importai.substack.com": {
+      "status": "ok",
+      "meta": {"id": 101, "subdomain": "importai", "custom_domain": null, "author_id": 11, "name": "Import AI"}
+    },
+    "https://importai.net": {
+      "status": "ok",
+      "meta": {"id": 101, "subdomain": null, "custom_domain": "importai.net", "author_id": 11, "name": "Import AI"}
+    },
+    "https://substack.com/@jackclark": {
+      "status": "ok",
+      "meta": {"id": 101, "subdomain": null, "custom_domain": null, "author_id": 11, "name": "Jack Clark"}
+    },
+
+    "https://gradientflow.substack.com": {
+      "status": "ok",
+      "meta": {"id": 201, "subdomain": null, "custom_domain": null, "author_id": 22, "name": "Gradient Flow"}
+    },
+    "https://thesequence.substack.com": {
+      "status": "ok",
+      "meta": {"id": 202, "subdomain": null, "custom_domain": null, "author_id": 22, "name": "The Sequence"}
+    },
+
+    "https://oldhandle.substack.com": {
+      "status": "http_404",
+      "meta": null
+    },
+    "https://newhandle.substack.com": {
+      "status": "ok",
+      "meta": {"id": 301, "subdomain": "newhandle", "custom_domain": null, "author_id": 31, "name": "New Handle", "aliases": ["https://oldhandle.substack.com", "oldhandle"]}
+    },
+
+    "https://elabs.io": {
+      "status": "ok",
+      "meta": {"id": 401, "subdomain": "elementlabs", "custom_domain": "elabs.io", "author_id": 41, "name": "Element Labs", "aliases": ["elementlabs"]}
+    },
+    "https://elementlabs.substack.com": {
+      "status": "ok",
+      "meta": {"id": 401, "subdomain": "elementlabs", "custom_domain": "elabs.io", "author_id": 41, "name": "Element Labs"}
+    }
+  },
+  "recs": {
+    "https://theairuntime.substack.com": [
+      "https://importai.substack.com",
+      "https://importai.net",
+      "https://substack.com/@jackclark",
+      "https://gradientflow.substack.com",
+      "https://thesequence.substack.com",
+      "https://oldhandle.substack.com",
+      "https://elabs.io"
+    ],
+    "https://importai.substack.com": ["https://theairuntime.substack.com"],
+    "https://elabs.io": ["https://elementlabs.substack.com"]
+  }
+}

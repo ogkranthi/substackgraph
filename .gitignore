@@ -1,0 +1,21 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Runtime artifacts (the cache, logs, and rendered graphs are generated, not committed)
+artifacts/
+
+# pyvis dumps its vendored JS assets (vis.js, tom-select) next to the CWD when rendering
+/lib/
+
+# But DO keep committed test fixtures even if they are sqlite files
+!tests/fixtures/
