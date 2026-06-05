@@ -1,0 +1,35 @@
+# Fly.io config for the STAGING app — deployed automatically from the dev branch
+# (production deploys from `main` via fly.toml). Same image, separate app + volume,
+# so changes are exercised on a real URL before they reach substackgraph.com.
+app = "substackgraph-staging"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SUBSTACKGRAPH_DB = "/data/cache.sqlite"
+  ALLOW_LIVE_CRAWL = "0"
+  LOAD_DEMO_ON_START = "1"
+
+[mounts]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0   # staging can always cold-start; cost first
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

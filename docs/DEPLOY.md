@@ -14,24 +14,32 @@ Tunnel path keeps everything "in Cloudflare" with no separate cloud account.
 
 ## Recommended: Fly.io with push-to-deploy (zero-ops)
 
-After a **one-time** setup, every `git push` to the dev/default branch deploys to production
-automatically via `.github/workflows/deploy-fly.yml` — no laptop, no per-change steps. The
-SQLite cache lives on a persistent Fly volume, TLS is managed, and Cloudflare sits in front.
+After a **one-time** setup, every `git push` deploys automatically via
+`.github/workflows/deploy-fly.yml` — no laptop, no per-change steps:
+
+- push to the **dev branch** → deploys the **staging** app (`fly.staging.toml`)
+- push to **`main`** → deploys **production** (`fly.toml`, → substackgraph.com)
+
+So changes always get exercised on a real staging URL before they reach the public domain.
+The SQLite cache lives on a persistent Fly volume per app, TLS is managed, Cloudflare sits in front.
 
 ### One-time setup (~10 min, needs your accounts)
 
 1. Install flyctl and sign in: `curl -L https://fly.io/install.sh | sh` then `fly auth login`.
-2. Create the app (matches `app` in `fly.toml`; pick another name if taken):
+2. Create both apps (names match the `app` field in each toml; pick others if taken):
    ```bash
-   fly apps create substackgraph
+   fly apps create substackgraph           # production
+   fly apps create substackgraph-staging   # staging
    ```
-3. Create the persistent volume for the cache (same name as `[mounts].source`):
+3. Create a persistent cache volume in **each** app (name matches `[mounts].source`):
    ```bash
-   fly volumes create data --region iad --size 1   # 1 GB; match your fly.toml region
+   fly volumes create data -a substackgraph         --region iad --size 1
+   fly volumes create data -a substackgraph-staging --region iad --size 1
    ```
-4. Create a deploy token and add it to GitHub as a repository secret named `FLY_API_TOKEN`:
+4. Create an **org-scoped** deploy token (so the one secret can deploy both apps) and add it to
+   GitHub as a repository secret named `FLY_API_TOKEN`:
    ```bash
-   fly tokens create deploy -x 999999h
+   fly tokens create org -x 999999h
    ```
    Add it under **GitHub → repo → Settings → Secrets and variables → Actions → New secret**.
 5. Point the domain through Cloudflare:
@@ -60,6 +68,40 @@ reach Substack and confirm the `substack-api` field names first (see `client.ext
 ```bash
 fly ssh console -C "substackgraph crawl --seed https://theairuntime.substack.com"
 ```
+
+## Cloudflare WAF + rate limiting (edge defense)
+
+The app sets security headers and runs as non-root, but the cheapest, strongest protection is at
+Cloudflare's edge — requests are filtered before they ever reach Fly (saving compute *and* blocking
+abuse). Configure once, in the Cloudflare dashboard for `substackgraph.com`:
+
+### 1. Rate limiting rule (per-IP throttle)
+
+**Security → WAF → Rate limiting rules → Create rule:**
+
+- **Name:** `app-throttle`
+- **If incoming requests match:** `(http.host eq "substackgraph.com")`
+- **When rate exceeds:** `60` requests per `1 minute` (per client IP — the default characteristic)
+- **Then:** *Block* for `60` seconds (use *Managed Challenge* instead if you expect shared-IP users)
+
+Tighten a second rule for any future write/crawl endpoint, e.g. match
+`(http.request.uri.path contains "/api/" and http.request.method eq "POST")` at `10/min`.
+
+### 2. Managed WAF rules
+
+**Security → WAF → Managed rules:** enable the **Cloudflare Managed Ruleset** (and the free
+**OWASP Core Ruleset** if available on your plan). Action: *Managed Challenge*.
+
+### 3. Baseline hardening
+
+- **SSL/TLS → Overview:** mode **Full (strict)** (pairs with the `fly certs` cert).
+- **SSL/TLS → Edge Certificates:** **Always Use HTTPS** on, **Min TLS 1.2**, **HSTS** on
+  (the app also sends `Strict-Transport-Security`).
+- **Security → Settings:** **Bot Fight Mode** on (free tier).
+- **Network:** leave the orange cloud (proxy) **on** so Fly's origin IP is never exposed.
+
+These are free-tier features. Result: edge TLS, DDoS protection, bot mitigation, and per-IP rate
+limiting in front of a non-root container that only serves cached data — defense in depth.
 
 ## Prebuilt image (no local build needed)
 

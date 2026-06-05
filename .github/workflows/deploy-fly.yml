@@ -32,12 +32,24 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Select target (staging from dev branch, production from main)
+        if: steps.guard.outputs.skip == 'false'
+        id: target
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "config=fly.toml" >> "$GITHUB_OUTPUT"
+            echo "name=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "config=fly.staging.toml" >> "$GITHUB_OUTPUT"
+            echo "name=staging" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up flyctl
         if: steps.guard.outputs.skip == 'false'
         uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Deploy
+      - name: Deploy ${{ steps.target.outputs.name }}
         if: steps.guard.outputs.skip == 'false'
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl deploy --remote-only
+        run: flyctl deploy --remote-only --config ${{ steps.target.outputs.config }}
