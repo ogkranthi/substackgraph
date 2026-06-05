@@ -33,6 +33,18 @@ DEFAULT_SEED = normalize_url(os.getenv("SUBSTACKGRAPH_SEED", "https://theairunti
 
 app = FastAPI(title="substackgraph", description="Map and resolve the Substack recommendation network.")
 
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Baseline hardening for a public site. HSTS assumes TLS is terminated upstream
+    (Cloudflare). Frames are same-origin only — the landing page embeds /graph itself."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
 # Guards on-demand crawls so a flood of seeds can't spawn unbounded threads.
 _crawl_lock = threading.Lock()
 _crawling: set[str] = set()

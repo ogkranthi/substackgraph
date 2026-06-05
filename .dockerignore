@@ -1,0 +1,19 @@
+# Keep the build context lean and never copy secrets/local state into the image.
+.git
+.github
+.venv
+venv
+env
+artifacts
+__pycache__
+*.pyc
+.pytest_cache
+.env
+lib
+docs
+tests
+*.md
+!README.md
+Dockerfile
+docker-compose.yml
+docker-entrypoint.sh
