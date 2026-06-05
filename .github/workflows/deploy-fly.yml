@@ -1,0 +1,43 @@
+name: Deploy to Fly.io
+
+# Continuous deployment: every push to the default/dev branch ships to production.
+# One-time setup (see docs/DEPLOY.md): create the Fly app + volume, then add the
+# repository secret FLY_API_TOKEN. Until that secret exists, this workflow no-ops
+# cleanly instead of failing — so the repo stays green before go-live.
+
+on:
+  push:
+    branches: ["main", "claude/modest-johnson-NnY2U"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-fly
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for deploy token
+        id: guard
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FLY_API_TOKEN is not set — skipping deploy (one-time setup not done yet)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up flyctl
+        if: steps.guard.outputs.skip == 'false'
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --remote-only

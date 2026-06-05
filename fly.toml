@@ -1,0 +1,41 @@
+# Fly.io configuration for the substackgraph live app.
+# App names are globally unique on Fly — if "substackgraph" is taken, change it here
+# and in the one-time setup commands (see docs/DEPLOY.md).
+app = "substackgraph"
+primary_region = "iad"   # change to your nearest region (e.g. lhr, fra, sjc)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SUBSTACKGRAPH_DB = "/data/cache.sqlite"
+  # Live crawling stays OFF in production (ToS guard). Crawl seeds yourself via the CLI
+  # and let the site serve from the cache. Flip deliberately if ever needed.
+  ALLOW_LIVE_CRAWL = "0"
+  # Seed the demo neighborhood on first boot so the site is never blank.
+  LOAD_DEMO_ON_START = "1"
+
+# Persistent disk for the SQLite cache — survives deploys and machine stop/start.
+[mounts]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Scale to zero when idle to stay within the free allowance; cold start is a few
+  # seconds. For an always-warm product, set min_machines_running = 1.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

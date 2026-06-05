@@ -12,6 +12,55 @@ Tunnel path keeps everything "in Cloudflare" with no separate cloud account.
 > (`ALLOW_LIVE_CRAWL=0`). The public site serves neighborhoods that are already cached.
 > Only enable on-demand crawling for trusted deployments, and keep the ≤1 req/sec limiter.
 
+## Recommended: Fly.io with push-to-deploy (zero-ops)
+
+After a **one-time** setup, every `git push` to the dev/default branch deploys to production
+automatically via `.github/workflows/deploy-fly.yml` — no laptop, no per-change steps. The
+SQLite cache lives on a persistent Fly volume, TLS is managed, and Cloudflare sits in front.
+
+### One-time setup (~10 min, needs your accounts)
+
+1. Install flyctl and sign in: `curl -L https://fly.io/install.sh | sh` then `fly auth login`.
+2. Create the app (matches `app` in `fly.toml`; pick another name if taken):
+   ```bash
+   fly apps create substackgraph
+   ```
+3. Create the persistent volume for the cache (same name as `[mounts].source`):
+   ```bash
+   fly volumes create data --region iad --size 1   # 1 GB; match your fly.toml region
+   ```
+4. Create a deploy token and add it to GitHub as a repository secret named `FLY_API_TOKEN`:
+   ```bash
+   fly tokens create deploy -x 999999h
+   ```
+   Add it under **GitHub → repo → Settings → Secrets and variables → Actions → New secret**.
+5. Point the domain through Cloudflare:
+   ```bash
+   fly certs add substackgraph.com
+   ```
+   Then in **Cloudflare → DNS** add a `CNAME` `substackgraph.com → substackgraph.fly.dev`
+   (proxied / orange cloud), and set **SSL/TLS mode to Full (strict)**.
+
+That's it. The first deploy runs on your next push (or trigger it now from the **Actions** tab
+via *Run workflow*). After this, **shipping is just a commit/push — fully phone-driven.**
+
+### What's automatic from here on
+
+- Push → GitHub Actions builds the image on Fly's remote builder and deploys it.
+- The volume persists the cache across deploys and machine restarts.
+- The app scales to zero when idle (cost control); set `min_machines_running = 1` in
+  `fly.toml` for an always-warm instance.
+- Before the secret exists, the deploy workflow **no-ops cleanly** (stays green).
+
+### Seeding real data
+
+The site boots with the demo neighborhood. To show a real map, run a crawl once the host can
+reach Substack and confirm the `substack-api` field names first (see `client.extract_identity`):
+
+```bash
+fly ssh console -C "substackgraph crawl --seed https://theairuntime.substack.com"
+```
+
 ## Prebuilt image (no local build needed)
 
 CI builds and publishes the image to GHCR on every push to the default/dev branch, so you
