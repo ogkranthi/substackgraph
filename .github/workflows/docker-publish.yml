@@ -11,7 +11,56 @@ on:
   workflow_dispatch:
 
 jobs:
+  smoke:
+    # Runtime smoke test: build the image and run it the way Fly does — against a
+    # root-owned, empty volume — then assert the app actually serves. Unit tests can't
+    # catch container/permission/entrypoint bugs; this does, before anything ships.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t sg:test .
+
+      - name: Run container against a root-owned volume (mimics Fly)
+        run: |
+          # A Docker named volume is root-owned and empty on first mount — exactly the
+          # condition that 500'd on Fly. The entrypoint must chown it and drop privileges.
+          docker volume create sgdata
+          docker run -d --name sg -p 8000:8000 \
+            -e LOAD_DEMO_ON_START=1 -e ALLOW_LIVE_CRAWL=0 \
+            -v sgdata:/data sg:test
+
+      - name: Wait for the app and assert it serves
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /tmp/body.html -w '%{http_code}' http://127.0.0.1:8000/ || true)
+            if [ "$code" = "200" ]; then break; fi
+            sleep 2
+          done
+          echo "GET / -> $code"
+          health=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/healthz || true)
+          echo "GET /healthz -> $health"
+          if [ "$code" != "200" ] || [ "$health" != "200" ]; then
+            echo "::error::App did not serve 200 (/, /healthz = $code, $health)"
+            docker logs sg || true
+            exit 1
+          fi
+          # Prove the cache was writable and the demo seeded end-to-end (the exact bug
+          # we fixed: a root-owned volume the app could not write to).
+          if ! grep -q "canonical publications" /tmp/body.html; then
+            echo "::error::Index served but demo neighborhood is missing — cache likely not writable"
+            docker logs sg || true
+            exit 1
+          fi
+          echo "Smoke test passed: app serves and demo neighborhood is loaded."
+
+      - name: Tear down
+        if: always()
+        run: docker rm -f sg >/dev/null 2>&1 || true
+
   build-and-push:
+    needs: smoke
     runs-on: ubuntu-latest
     permissions:
       contents: read

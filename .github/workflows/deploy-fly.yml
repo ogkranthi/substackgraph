@@ -38,13 +38,38 @@ jobs:
         run: |
           if [ "${{ github.ref_name }}" = "main" ]; then
             echo "config=fly.toml" >> "$GITHUB_OUTPUT"
-            echo "app=substackgraph" >> "$GITHUB_OUTPUT"
+            echo "app=substackgraph-jm6dyg" >> "$GITHUB_OUTPUT"
             echo "name=production" >> "$GITHUB_OUTPUT"
           else
             echo "config=fly.staging.toml" >> "$GITHUB_OUTPUT"
             echo "app=substackgraph-staging" >> "$GITHUB_OUTPUT"
             echo "name=staging" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Smoke test the image before deploying (mimics Fly's root-owned volume)
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          docker build -t sg:deploycheck .
+          docker volume create sgdeploy
+          docker run -d --name sgdeploy -p 8000:8000 \
+            -e LOAD_DEMO_ON_START=1 -e ALLOW_LIVE_CRAWL=0 \
+            -v sgdeploy:/data sg:deploycheck
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /tmp/body.html -w '%{http_code}' http://127.0.0.1:8000/ || true)
+            if [ "$code" = "200" ]; then break; fi
+            sleep 2
+          done
+          ok=1
+          [ "$code" = "200" ] || ok=0
+          grep -q "canonical publications" /tmp/body.html || ok=0
+          if [ "$ok" != "1" ]; then
+            echo "::error::Pre-deploy smoke test failed (GET / -> $code); refusing to deploy."
+            docker logs sgdeploy || true
+            docker rm -f sgdeploy || true
+            exit 1
+          fi
+          docker rm -f sgdeploy || true
+          echo "Pre-deploy smoke test passed."
 
       - name: Set up flyctl
         if: steps.guard.outputs.skip == 'false'
