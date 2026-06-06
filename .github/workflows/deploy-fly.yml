@@ -44,10 +44,15 @@ jobs:
         env:
           CHOICE: ${{ github.event.inputs.target }}
         run: |
-          # Resolve "auto" to production on main, staging elsewhere.
+          # Resolve "auto" to production on main or the active dev branch, staging elsewhere.
           want="$CHOICE"
           if [ -z "$want" ] || [ "$want" = "auto" ]; then
-            if [ "${{ github.ref_name }}" = "main" ]; then want="production"; else want="staging"; fi
+            branch="${{ github.ref_name }}"
+            if [ "$branch" = "main" ] || [ "$branch" = "claude/modest-johnson-NnY2U" ]; then
+              want="production"
+            else
+              want="staging"
+            fi
           fi
           if [ "$want" = "production" ]; then
             echo "config=fly.toml" >> "$GITHUB_OUTPUT"
