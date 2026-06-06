@@ -1,0 +1,50 @@
+name: Deploy once (manual, token via input)
+
+# TEMPORARY one-shot deploy used to ship the live app without a stored secret.
+# The token is masked in logs immediately. Delete this file after a successful deploy
+# and rotate the token. The permanent path is deploy-fly.yml + the FLY_API_TOKEN secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      fly_token:
+        description: "Fly deploy token"
+        required: true
+
+concurrency:
+  group: deploy-fly
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mask token
+        run: echo "::add-mask::${{ github.event.inputs.fly_token }}"
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy production (remote builder)
+        env:
+          FLY_API_TOKEN: ${{ github.event.inputs.fly_token }}
+        run: flyctl deploy -a substackgraph-jm6dyg --config fly.toml --remote-only
+
+      - name: Verify the live site serves
+        run: |
+          url="https://substackgraph-jm6dyg.fly.dev/"
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /tmp/body.html -w '%{http_code}' "$url" || true)
+            if [ "$code" = "200" ]; then break; fi
+            sleep 3
+          done
+          echo "GET $url -> $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::Live site did not return 200 (got $code)"; exit 1
+          fi
+          if grep -q "canonical publications" /tmp/body.html; then
+            echo "Live site is serving the resolved neighborhood."
+          else
+            echo "::warning::Site is up but the demo neighborhood is not showing (cache may be stale)."
+          fi
