@@ -209,6 +209,43 @@ def trigger_crawl(seed: str = Query(...)):
     return JSONResponse({"status": "crawling", "seed": nseed}, status_code=202)
 
 
+@app.get("/api/status")
+def api_status():
+    """Debug endpoint: DB row counts and last crawl log lines."""
+    import sqlite3
+    from pathlib import Path
+
+    db = str(config.DB_PATH)
+    rows: dict = {}
+    try:
+        conn = sqlite3.connect(db)
+        total = conn.execute("SELECT COUNT(*) FROM http_cache").fetchone()[0]
+        by_status = dict(conn.execute(
+            "SELECT status, COUNT(*) FROM http_cache GROUP BY status"
+        ).fetchall())
+        marker = conn.execute(
+            "SELECT payload_json FROM http_cache WHERE cache_key LIKE '_crawl_marker:%'"
+        ).fetchone()
+        conn.close()
+        rows = {"total": total, "by_status": by_status, "crawl_marker": marker[0] if marker else None}
+    except Exception as e:
+        rows = {"error": str(e)}
+
+    log_tail: list[str] = []
+    log_path = Path("/tmp/crawl.log")
+    if log_path.exists():
+        lines = log_path.read_text().splitlines()
+        log_tail = lines[-30:]
+
+    return JSONResponse({
+        "db_path": db,
+        "db": rows,
+        "crawl_log_tail": log_tail,
+        "allow_live_crawl": ALLOW_LIVE_CRAWL,
+        "seed_url": DEFAULT_SEED,
+    })
+
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
     # Research/visualization site; keep crawler endpoints out of search indexes.
