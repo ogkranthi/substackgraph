@@ -9,6 +9,12 @@ on:
   push:
     branches: ["main", "claude/modest-johnson-NnY2U"]
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Which app to deploy"
+        type: choice
+        default: auto
+        options: [auto, staging, production]
 
 concurrency:
   group: deploy-fly
@@ -32,11 +38,18 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Select target (staging from dev branch, production from main)
+      - name: Select target (manual input wins, else production on main / staging on dev)
         if: steps.guard.outputs.skip == 'false'
         id: target
+        env:
+          CHOICE: ${{ github.event.inputs.target }}
         run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
+          # Resolve "auto" to production on main, staging elsewhere.
+          want="$CHOICE"
+          if [ -z "$want" ] || [ "$want" = "auto" ]; then
+            if [ "${{ github.ref_name }}" = "main" ]; then want="production"; else want="staging"; fi
+          fi
+          if [ "$want" = "production" ]; then
             echo "config=fly.toml" >> "$GITHUB_OUTPUT"
             echo "app=substackgraph-jm6dyg" >> "$GITHUB_OUTPUT"
             echo "name=production" >> "$GITHUB_OUTPUT"
