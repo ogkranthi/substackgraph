@@ -32,6 +32,10 @@ def cmd_crawl(args: argparse.Namespace) -> int:
     config.ensure_dirs()
     cache = Cache(args.db)
     try:
+        if getattr(args, "force", False):
+            cache.conn.execute("DELETE FROM http_cache")
+            cache.conn.commit()
+            print("Cache cleared (--force).")
         crawl(args.seed, args.hops, cache, RateLimiter(), SubstackClient())
         nodes, edges = load_raw_graph(cache)
         print(f"Crawled {len(nodes)} nodes / {len(edges)} edges into {args.db} (cache-first, ≤1 req/s).")
@@ -120,6 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_crawl = sub.add_parser("crawl", help="crawl the recommendation neighborhood (cache-first)")
     p_crawl.add_argument("--seed", required=True, help="seed publication URL")
     p_crawl.add_argument("--hops", type=int, default=2, help="crawl depth (default 2)")
+    p_crawl.add_argument("--force", action="store_true", help="clear the cache before crawling")
     _add_db_arg(p_crawl)
     p_crawl.set_defaults(func=cmd_crawl)
 
