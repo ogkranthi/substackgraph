@@ -6,6 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
+# gosu lets the entrypoint start as root (to fix mounted-volume ownership) and then
+# drop to the unprivileged user to run the app.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Install dependencies first for layer caching.
@@ -15,7 +21,8 @@ RUN pip install --no-cache-dir ".[web]"
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# Run as an unprivileged user; give it ownership of the cache volume and app dir.
+# Create the unprivileged user and give it the app dir. The /data volume is chowned
+# at runtime by the entrypoint, because Fly/most hosts mount it root-owned over this.
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
     && useradd --create-home --uid 10001 appuser \
     && mkdir -p /data \
@@ -27,7 +34,8 @@ ENV SUBSTACKGRAPH_DB=/data/cache.sqlite
 ENV ALLOW_LIVE_CRAWL=0
 VOLUME ["/data"]
 
-USER appuser
+# NOTE: container starts as root so the entrypoint can chown the mounted volume; it
+# then drops to appuser via gosu before running anything. Do not add `USER appuser`.
 EXPOSE 8000
 
 # Liveness probe (no curl in slim images; use stdlib).
