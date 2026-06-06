@@ -11,7 +11,7 @@ primary_region = 'iad'
 
 [env]
   ALLOW_LIVE_CRAWL = '0'
-  LOAD_DEMO_ON_START = '1'
+  SEED_URL = 'https://theairuntime.substack.com'
   SUBSTACKGRAPH_DB = '/data/cache.sqlite'
 
 [[mounts]]

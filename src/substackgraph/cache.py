@@ -39,6 +39,10 @@ class Cache:
         self._init()
 
     def _init(self) -> None:
+        # WAL mode lets a background crawler write while the web server reads concurrently.
+        # synchronous=NORMAL is safe with WAL (no corruption on crash) and far faster than FULL.
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS http_cache (
