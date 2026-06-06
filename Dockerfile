@@ -28,8 +28,10 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
     && mkdir -p /data \
     && chown -R appuser:appuser /data /app
 
-# Cache lives on a writable volume so crawled neighborhoods survive restarts.
+# Cache and any runtime artifacts live on the writable volume (the package install dir
+# is read-only, so artifacts must not default under it). Both sit on /data.
 ENV SUBSTACKGRAPH_DB=/data/cache.sqlite
+ENV SUBSTACKGRAPH_ARTIFACTS=/data/artifacts
 # Live crawling is OFF by default (ToS-sensitive); set to 1 only for trusted deploys.
 ENV ALLOW_LIVE_CRAWL=0
 VOLUME ["/data"]

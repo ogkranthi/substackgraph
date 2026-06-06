@@ -6,7 +6,10 @@ from pathlib import Path
 # Project root (this file is src/substackgraph/config.py → parents[2] is the repo root).
 ROOT = Path(__file__).resolve().parents[2]
 
-ARTIFACTS = ROOT / "artifacts"
+# Writable artifacts root. Defaults to the repo for dev checkouts, but is overridable
+# because an installed package resolves ROOT to a read-only site-packages dir — a
+# deployment must point this (and SUBSTACKGRAPH_DB) at a writable volume.
+ARTIFACTS = Path(os.getenv("SUBSTACKGRAPH_ARTIFACTS", ROOT / "artifacts"))
 # Cache path is overridable so a deployment can point at a mounted volume.
 DB_PATH = Path(os.getenv("SUBSTACKGRAPH_DB", ARTIFACTS / "cache.sqlite"))
 LOG_DIR = ARTIFACTS / "logs"
