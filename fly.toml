@@ -12,7 +12,7 @@ primary_region = 'iad'
 [env]
   ALLOW_LIVE_CRAWL = '0'
   SEED_URL = 'https://theairuntime.substack.com'
-  RECRAWL_MARKER = 'v1'
+  RECRAWL_MARKER = 'v2'
   SUBSTACKGRAPH_DB = '/data/cache.sqlite'
 
 [[mounts]]

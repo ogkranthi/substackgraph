@@ -68,15 +68,37 @@ class SubstackClient:
     """
 
     def get_metadata(self, url: str) -> dict:
-        newsletter = self._newsletter(url)
-        # The library exposes recommendations/authors but no single metadata accessor we can
-        # rely on yet; gather what we can and keep the raw shape. Confirm against DevTools.
-        meta: dict = {}
+        nurl = normalize_url(url)
+        meta: dict = {"url": nurl}
         try:
-            meta = dict(getattr(newsletter, "_metadata", {}) or {})  # TODO confirm attribute
+            # Use the library's publication search — same endpoint _resolve_publication_id
+            # uses, but we capture the full match so we get id/subdomain/custom_domain/name.
+            from substack_api.newsletter import (  # noqa: PLC0415
+                DISCOVERY_HEADERS,
+                SEARCH_URL,
+                _match_publication,
+            )
+            import requests as _req  # noqa: PLC0415 — guaranteed via substack-api dep
+            host = urlsplit(nurl).netloc
+            r = _req.get(
+                SEARCH_URL,
+                headers=DISCOVERY_HEADERS,
+                params={"query": host, "page": 0, "limit": 25,
+                        "skipExplanation": "true", "sort": "relevance"},
+                timeout=10,
+            )
+            r.raise_for_status()
+            match = _match_publication(r.json(), host)
+            if match:
+                meta.update({
+                    "id": match.get("id"),
+                    "subdomain": match.get("subdomain"),
+                    "custom_domain": match.get("custom_domain"),
+                    "name": match.get("name"),
+                    "author_id": match.get("author_id"),
+                })
         except Exception:  # noqa: BLE001
-            meta = {}
-        meta.setdefault("url", normalize_url(url))
+            pass
         return meta
 
     def get_recommendation_urls(self, url: str) -> list[str]:

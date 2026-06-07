@@ -68,9 +68,14 @@ def _canonicalize(raw_nodes: list[RawNode], audit: AuditLog) -> dict[int, Canoni
         if node.status != "ok":
             continue
         ident = extract_identity(node.meta)
-        if ident.pub_id is None:
-            continue
-        groups.setdefault(int(ident.pub_id), []).append((node.url, ident))
+        if ident.pub_id is not None:
+            pid = int(ident.pub_id)
+        else:
+            # No publication ID in metadata — derive a stable synthetic ID from the URL
+            # so the node still participates in the graph. Real Substack pub_ids are
+            # typically < 10^8; synthetic IDs live at 10^9+ to avoid collisions.
+            pid = abs(hash(node.url)) % (10 ** 8) + 10 ** 9
+        groups.setdefault(pid, []).append((node.url, ident))
 
     canonical: dict[int, CanonicalNode] = {}
     for pid in sorted(groups):
