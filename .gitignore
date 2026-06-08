@@ -12,7 +12,13 @@ build/
 dist/
 
 # Runtime artifacts (the cache, logs, and rendered graphs are generated, not committed)
-artifacts/
+artifacts/*
+!artifacts/content/
+!artifacts/graphs/
+artifacts/graphs/*
+!artifacts/graphs/screenshots/
+artifacts/graphs/screenshots/*
+!artifacts/graphs/screenshots/README.md
 
 # pyvis dumps its vendored JS assets (vis.js, tom-select) next to the CWD when rendering
 /lib/
@@ -22,3 +28,4 @@ artifacts/
 
 # But DO keep committed test fixtures even if they are sqlite files
 !tests/fixtures/
+
