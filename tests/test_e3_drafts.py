@@ -19,10 +19,13 @@ from substackgraph.llm import generate_collab_brief, generate_outreach_angles
 def _no_api_key(monkeypatch):
     """Ensure tests always use stub mode (no API key)."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     # Reset the module-level state so stub mode is re-evaluated
     import substackgraph.llm as llm_mod
-    llm_mod._client = None
+    llm_mod._api_key = None
     llm_mod._stub_mode = False
+    # Prevent .env file from being read during tests by stubbing _get_api_key to return None
+    monkeypatch.setattr("substackgraph.llm._get_api_key", lambda: None)
 
 
 @pytest.fixture()

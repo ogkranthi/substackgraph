@@ -1,7 +1,8 @@
 """LLM integration for Episode 3 draft generation.
 
-Uses claude-haiku-3-5 via the Anthropic SDK. Falls back to stub templates
-when ANTHROPIC_API_KEY is not set, with a clear warning.
+Uses OpenRouter (OpenAI-compatible API) with plain requests — no SDK needed.
+Set OPENROUTER_API_KEY in .env or environment. Falls back to stub templates
+when the key is not set, with a clear warning.
 """
 
 from __future__ import annotations
@@ -9,49 +10,78 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 
-MODEL = "claude-haiku-4-5-20251001"
+import requests
 
-_client = None
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODEL = "anthropic/claude-haiku-4-5"  # via OpenRouter
+
+_api_key: str | None = None
 _stub_mode = False
 
 
-def _get_client():
-    """Lazy-init the Anthropic client. Returns None if no API key."""
-    global _client, _stub_mode
-    if _client is not None:
-        return _client
+def _get_api_key() -> str | None:
+    """Return the OpenRouter API key, loading .env if needed."""
+    global _api_key, _stub_mode
+    if _api_key is not None:
+        return _api_key
     if _stub_mode:
         return None
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
+    # Check env first
+    key = os.environ.get("OPENROUTER_API_KEY")
+
+    # Fall back to .env file in project root
+    if not key:
+        env_path = Path(__file__).parent.parent.parent / ".env"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if line.startswith("OPENROUTER_API_KEY="):
+                    key = line.split("=", 1)[1].strip()
+                    break
+
+    if not key:
         print(
-            "WARNING: ANTHROPIC_API_KEY not set. Using stub templates for collab briefs "
-            "and outreach angles. Set the env var for real LLM-powered drafts.",
+            "WARNING: OPENROUTER_API_KEY not set. Using stub templates for collab briefs "
+            "and outreach angles. Set OPENROUTER_API_KEY in .env or environment.",
             file=sys.stderr,
         )
         _stub_mode = True
         return None
 
-    try:
-        import anthropic
-        _client = anthropic.Anthropic(api_key=api_key)
-        return _client
-    except ImportError:
-        print(
-            "WARNING: anthropic SDK not installed. Using stub templates. "
-            "Run: pip install anthropic",
-            file=sys.stderr,
-        )
-        _stub_mode = True
-        return None
+    _api_key = key
+    return _api_key
+
+
+def _call(prompt: str, max_tokens: int = 600) -> str:
+    """Make a single OpenRouter chat completion call. Returns the response text."""
+    key = _get_api_key()
+    if key is None:
+        raise RuntimeError("No API key")
+
+    resp = requests.post(
+        OPENROUTER_URL,
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/substackgraph",
+            "X-Title": "substackgraph",
+        },
+        json={
+            "model": MODEL,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
 
 
 def is_stub_mode() -> bool:
-    """Check if we're in stub mode (no API key or SDK)."""
-    _get_client()
-    return _stub_mode
+    """Check if we're in stub mode (no API key)."""
+    return _get_api_key() is None
 
 
 def generate_collab_brief(
@@ -65,8 +95,7 @@ def generate_collab_brief(
     overlap_score: float,
 ) -> dict:
     """Generate a collaboration brief. Returns dict with 'brief', 'method', and optionally 'model'."""
-    client = _get_client()
-    if client is None:
+    if _get_api_key() is None:
         return _stub_collab_brief(pub_a_name, pub_b_name, cluster_a, cluster_b)
 
     shared_str = ", ".join(shared_recommenders[:8]) if shared_recommenders else "none identified"
@@ -99,12 +128,7 @@ CROSS-RECOMMENDATION FRAMING:
 
 Keep the total under 200 words. Be specific — reference actual names, clusters, and shared connections."""
 
-    message = client.messages.create(
-        model=MODEL,
-        max_tokens=400,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    brief_text = message.content[0].text
+    brief_text = _call(prompt, max_tokens=400)
     return {"brief": brief_text, "method": "llm_claude", "model": MODEL}
 
 
@@ -117,8 +141,7 @@ def generate_outreach_angles(
     voice_compat_score: float,
 ) -> dict:
     """Generate 3 outreach angles. Returns dict with 'angles', 'method', and optionally 'model'."""
-    client = _get_client()
-    if client is None:
+    if _get_api_key() is None:
         return _stub_outreach_angles(pub_a_name, pub_b_name)
 
     warm_path_str = " → ".join(warm_path) if warm_path else "no warm path found"
@@ -153,12 +176,7 @@ Tone: genuine, specific, brief. Write like one writer DMing another, not like a 
 
 Return ONLY the JSON array, no other text."""
 
-    message = client.messages.create(
-        model=MODEL,
-        max_tokens=600,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = message.content[0].text.strip()
+    raw = _call(prompt, max_tokens=600).strip()
     # Extract JSON from response (handle potential markdown wrapping)
     if raw.startswith("```"):
         lines = raw.split("\n")
