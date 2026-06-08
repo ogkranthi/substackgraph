@@ -379,12 +379,41 @@ def live_hooks(graph: nx.DiGraph, pub_id: int) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# E3-01: Collaboration brief generator (stub)
+# E3-01: Collaboration brief generator (LLM-powered)
 # ---------------------------------------------------------------------------
 
-def collab_brief(graph: nx.DiGraph, pub_a: int, pub_b: int) -> dict:
-    """Stub: templates a collaboration brief from publication names + cluster info.
-    TODO: real LLM brief generation from post content and audience analysis."""
+def _pub_description_from_cache(graph: nx.DiGraph, pub_id: int, cache=None) -> str:
+    """Best-effort description from cached metadata. Returns empty string if unavailable."""
+    if cache is None:
+        return ""
+    # Try to find cached metadata for this publication's URLs
+    node_data = graph.nodes.get(pub_id, {})
+    member_urls = node_data.get("member_urls", [])
+    parts = []
+    for url in member_urls:
+        row = cache.get(f"meta:{url}")
+        if row and row.status == "ok" and isinstance(row.payload, dict):
+            meta = row.payload
+            if meta.get("description"):
+                parts.append(meta["description"])
+            if meta.get("name") and meta["name"] not in parts:
+                parts.append(meta["name"])
+            break  # One good metadata hit is enough
+    return " | ".join(parts) if parts else ""
+
+
+def _shared_recommenders(graph: nx.DiGraph, pub_a: int, pub_b: int) -> list[str]:
+    """Find publications that recommend both pub_a and pub_b."""
+    preds_a = set(graph.predecessors(pub_a))
+    preds_b = set(graph.predecessors(pub_b))
+    shared = preds_a & preds_b
+    return [graph.nodes[n].get("label", str(n)) for n in shared]
+
+
+def collab_brief(graph: nx.DiGraph, pub_a: int, pub_b: int, cache=None) -> dict:
+    """Generate a collaboration brief using LLM (or stub fallback)."""
+    from . import llm
+
     label_a = graph.nodes.get(pub_a, {}).get("label", str(pub_a))
     label_b = graph.nodes.get(pub_b, {}).get("label", str(pub_b))
     clusters = cluster_map(graph)
@@ -394,56 +423,69 @@ def collab_brief(graph: nx.DiGraph, pub_a: int, pub_b: int) -> dict:
             cluster_a = c["label"]
         if pub_b in c["members"]:
             cluster_b = c["label"]
-    return {
-        "pub_a": label_a,
-        "pub_b": label_b,
-        "cluster_a": cluster_a,
-        "cluster_b": cluster_b,
-        "brief": (
-            f"Collaboration Brief: {label_a} x {label_b}\n\n"
-            f"Both publications operate in the Substack recommendation network.\n"
-            f"{label_a} is in cluster: {cluster_a or 'unknown'}\n"
-            f"{label_b} is in cluster: {cluster_b or 'unknown'}\n\n"
-            f"Potential angles:\n"
-            f"1. Guest post swap exploring the intersection of both audiences\n"
-            f"2. Joint AMA or Q&A thread on shared topics\n"
-            f"3. Cross-recommendation with personalized intro to each audience\n"
-        ),
-        "method": "stub_template",
-    }
+
+    desc_a = _pub_description_from_cache(graph, pub_a, cache)
+    desc_b = _pub_description_from_cache(graph, pub_b, cache)
+    shared = _shared_recommenders(graph, pub_a, pub_b)
+
+    # Compute overlap score
+    overlaps = audience_overlap(graph, pub_a)
+    overlap_score = 0.0
+    for o in overlaps:
+        if o["node"] == pub_b:
+            overlap_score = o["overlap_score"]
+            break
+
+    result = llm.generate_collab_brief(
+        pub_a_name=label_a,
+        pub_b_name=label_b,
+        pub_a_desc=desc_a,
+        pub_b_desc=desc_b,
+        cluster_a=cluster_a,
+        cluster_b=cluster_b,
+        shared_recommenders=shared,
+        overlap_score=overlap_score,
+    )
+    result["pub_a"] = label_a
+    result["pub_b"] = label_b
+    result["cluster_a"] = cluster_a
+    result["cluster_b"] = cluster_b
+    return result
 
 
 # ---------------------------------------------------------------------------
-# E3-02: Outreach angle suggestions (stub)
+# E3-02: Outreach angle suggestions (LLM-powered)
 # ---------------------------------------------------------------------------
 
-def outreach_angles(graph: nx.DiGraph, pub_a: int, pub_b: int) -> dict:
-    """Stub: generates 3 generic outreach angles. TODO: real LLM personalization
-    from actual content overlap analysis."""
+def outreach_angles(graph: nx.DiGraph, pub_a: int, pub_b: int, cache=None) -> dict:
+    """Generate 3 outreach angles using LLM (or stub fallback)."""
+    from . import llm
+
     label_a = graph.nodes.get(pub_a, {}).get("label", str(pub_a))
     label_b = graph.nodes.get(pub_b, {}).get("label", str(pub_b))
-    return {
-        "pub_a": label_a,
-        "pub_b": label_b,
-        "angles": [
-            {
-                "angle": "Shared Audience",
-                "pitch": f"Hey {label_b} - I noticed we share several recommenders in common. "
-                         f"Our audiences likely overlap. Would you be open to a cross-recommendation?",
-            },
-            {
-                "angle": "Content Complement",
-                "pitch": f"Hi {label_b} - I write {label_a} and your work complements mine well. "
-                         f"I think a guest post swap could introduce both our audiences to fresh perspectives.",
-            },
-            {
-                "angle": "Warm Path",
-                "pitch": f"Hi {label_b} - [mutual recommender] recommended both of us. "
-                         f"I'd love to explore a collaboration that serves both our audiences.",
-            },
-        ],
-        "method": "stub_generic_angles",
-    }
+
+    desc_a = _pub_description_from_cache(graph, pub_a, cache)
+    desc_b = _pub_description_from_cache(graph, pub_b, cache)
+
+    # Get warm path labels
+    wp = warm_path(graph, pub_a, pub_b)
+    wp_labels = [step["label"] for step in wp] if wp else []
+
+    # Get voice compat score
+    vc = voice_compatibility(graph, pub_a, pub_b)
+    vc_score = vc.get("score", 0.0)
+
+    result = llm.generate_outreach_angles(
+        pub_a_name=label_a,
+        pub_b_name=label_b,
+        pub_a_desc=desc_a,
+        pub_b_desc=desc_b,
+        warm_path=wp_labels,
+        voice_compat_score=vc_score,
+    )
+    result["pub_a"] = label_a
+    result["pub_b"] = label_b
+    return result
 
 
 # ---------------------------------------------------------------------------

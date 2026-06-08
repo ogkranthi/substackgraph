@@ -355,36 +355,50 @@ def cmd_live_hooks(args: argparse.Namespace) -> int:
 
 def cmd_collab_brief(args: argparse.Namespace) -> int:
     result, cache = _resolve_graph(args.db)
-    cache.close()
     id_a = _pub_id_from_url(result.graph, args.pub_a)
     id_b = _pub_id_from_url(result.graph, args.pub_b)
     if id_a is None:
+        cache.close()
         print(f"Could not find publication: {args.pub_a}", file=sys.stderr)
         return 1
     if id_b is None:
+        cache.close()
         print(f"Could not find publication: {args.pub_b}", file=sys.stderr)
         return 1
-    brief = analytics.collab_brief(result.graph, id_a, id_b)
+    brief = analytics.collab_brief(result.graph, id_a, id_b, cache=cache)
+    cache.close()
     print(brief["brief"])
+    method = brief.get("method", "unknown")
+    model = brief.get("model", "")
+    print(f"\n[method: {method}" + (f", model: {model}]" if model else "]"))
     return 0
 
 
 def cmd_outreach_angles(args: argparse.Namespace) -> int:
     result, cache = _resolve_graph(args.db)
-    cache.close()
     id_a = _pub_id_from_url(result.graph, args.pub_a)
     id_b = _pub_id_from_url(result.graph, args.pub_b)
     if id_a is None:
+        cache.close()
         print(f"Could not find publication: {args.pub_a}", file=sys.stderr)
         return 1
     if id_b is None:
+        cache.close()
         print(f"Could not find publication: {args.pub_b}", file=sys.stderr)
         return 1
-    result_data = analytics.outreach_angles(result.graph, id_a, id_b)
+    result_data = analytics.outreach_angles(result.graph, id_a, id_b, cache=cache)
+    cache.close()
     print(f"Outreach angles: {result_data['pub_a']} → {result_data['pub_b']}\n")
     for i, angle in enumerate(result_data["angles"], 1):
+        subject = angle.get("subject", "")
+        body = angle.get("body", angle.get("pitch", ""))
         print(f"  {i}. [{angle['angle']}]")
-        print(f"     {angle['pitch']}\n")
+        if subject:
+            print(f"     Subject: {subject}")
+        print(f"     {body}\n")
+    method = result_data.get("method", "unknown")
+    model = result_data.get("model", "")
+    print(f"[method: {method}" + (f", model: {model}]" if model else "]"))
     return 0
 
 

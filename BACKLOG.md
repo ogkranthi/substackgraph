@@ -50,13 +50,13 @@ into these must be parked and surfaced to Kranthi, not implemented.
 | E2-12 | Counter-intuitive match finder | `substackgraph surprise-matches --pub <url>` — stub: betweenness similarity. TODO: embeddings | done |
 | E2-13 | Timing/trigger detection | `substackgraph live-hooks --pub <url>` — stub: cluster proximity. TODO: content fetch | done |
 
-## Episode 3 — Outreach Stubs (COMPLETE — stubs only, DIBR harness required before real implementation)
+## Episode 3 — Outreach Drafts (E3-01/02 LLM-powered, E3-03 parked)
 
 | ID | Feature | Description | Status |
 |----|---------|-------------|--------|
-| E3-01 | Collaboration brief generator | `substackgraph collab-brief --pub-a <url> --pub-b <url>` — stub template. TODO: LLM | done |
-| E3-02 | Outreach angle suggestions | `substackgraph outreach-angles --pub-a <url> --pub-b <url>` — stub generic angles. TODO: LLM | done |
-| E3-03 | Delegated outreach (DIBR-gated) | Agent sends outreach — DIBR properties 2 and 3 must be verified before this ships | ready |
+| E3-01 | Collaboration brief generator | `substackgraph collab-brief --pub-a <url> --pub-b <url>` — LLM-powered via claude-haiku-3-5, stub fallback | done |
+| E3-02 | Outreach angle suggestions | `substackgraph outreach-angles --pub-a <url> --pub-b <url>` — LLM-powered via claude-haiku-3-5, stub fallback | done |
+| E3-03 | Delegated outreach (DIBR-gated) | Agent sends outreach — DIBR properties 2 and 3 must be verified before this ships. **PARKED**: draft generation only, no send automation. | parked |
 
 ---
 
