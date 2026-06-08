@@ -1,9 +1,9 @@
 """The substack-api adapter and the single place that touches raw metadata field names.
 
 CLAUDE.md is explicit: confirm exact JSON field names against the live library / DevTools
-before hard-coding them. So every raw-key access lives in `extract_identity` below, each
-marked `# TODO confirm`. Correcting a field name is a one-file change; nothing else in the
-codebase reads raw metadata keys directly.
+before hard-coding them. So every raw-key access lives in `extract_identity` below,
+verified against a real _preloads payload (2026-06-08). Correcting a field name is a
+one-file change; nothing else in the codebase reads raw metadata keys directly.
 """
 
 from __future__ import annotations
@@ -43,15 +43,14 @@ def extract_identity(meta: dict) -> IdentityTriad:
 
     THE ONLY place raw field names are referenced. Uses `.get()` throughout so a missing
     or renamed field degrades to None rather than crashing the resolver.
+    Field names confirmed against live _preloads.pub payload (2026-06-08).
     """
-    # TODO confirm against live substack-api: these key names are the documented intent
-    # (id / subdomain / custom_domain / author_id) but must be checked against a real payload.
-    pub_id = meta.get("id")  # TODO confirm
-    subdomain = meta.get("subdomain")  # TODO confirm
-    custom_domain = meta.get("custom_domain")  # TODO confirm
-    author_id = meta.get("author_id")  # TODO confirm (may be nested under authors[0].id)
-    name = meta.get("name")  # TODO confirm
-    aliases = meta.get("aliases") or []  # prior handles / redirecting domains, if exposed
+    pub_id = meta.get("id")
+    subdomain = meta.get("subdomain")
+    custom_domain = meta.get("custom_domain")
+    author_id = meta.get("author_id")
+    name = meta.get("name")
+    aliases = meta.get("aliases") or []
     return IdentityTriad(
         pub_id=pub_id,
         subdomain=subdomain,
@@ -71,32 +70,30 @@ class SubstackClient:
         nurl = normalize_url(url)
         meta: dict = {"url": nurl}
         try:
-            # Use the library's publication search — same endpoint _resolve_publication_id
-            # uses, but we capture the full match so we get id/subdomain/custom_domain/name.
-            from substack_api.newsletter import (  # noqa: PLC0415
-                DISCOVERY_HEADERS,
-                SEARCH_URL,
-                _match_publication,
-            )
-            import requests as _req  # noqa: PLC0415 — guaranteed via substack-api dep
-            host = urlsplit(nurl).netloc
-            r = _req.get(
-                SEARCH_URL,
-                headers=DISCOVERY_HEADERS,
-                params={"query": host, "page": 0, "limit": 25,
-                        "skipExplanation": "true", "sort": "relevance"},
-                timeout=10,
-            )
+            import json as _json  # noqa: PLC0415
+            import re as _re  # noqa: PLC0415
+            import requests as _req  # noqa: PLC0415
+            r = _req.get(nurl, timeout=10,
+                         headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
+            if r.status_code == 404:
+                raise PublicationNotFound(nurl)
             r.raise_for_status()
-            match = _match_publication(r.json(), host)
-            if match:
-                meta.update({
-                    "id": match.get("id"),
-                    "subdomain": match.get("subdomain"),
-                    "custom_domain": match.get("custom_domain"),
-                    "name": match.get("name"),
-                    "author_id": match.get("author_id"),
-                })
+            # Extract _preloads JSON from the page — contains pub metadata.
+            m = _re.search(r'window\._preloads\s*=\s*JSON\.parse\("(.+?)"\)', r.text)
+            if m:
+                decoded = m.group(1).encode().decode("unicode_escape")
+                preloads = _json.loads(decoded)
+                pub = preloads.get("pub", {})
+                if pub:
+                    meta.update({
+                        "id": pub.get("id"),
+                        "subdomain": pub.get("subdomain"),
+                        "custom_domain": pub.get("custom_domain"),
+                        "name": pub.get("name"),
+                        "author_id": pub.get("author_id"),
+                    })
+        except PublicationNotFound:
+            raise
         except Exception:  # noqa: BLE001
             pass
         return meta

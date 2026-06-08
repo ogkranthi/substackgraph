@@ -22,6 +22,14 @@ RATE_LIMIT_S = 1.0
 
 # Confidence at or above which two candidate nodes may be merged. Below this the
 # harness refuses and flags for review rather than guessing.
+#
+# Tuning rationale (Episode 1, 2026-06-08):
+#   - same_id merges score 1.0 (only valid same-pub merge)
+#   - shared_author_only scores ~0.3 (must never be enough)
+#   - max shared_author + identical_name = 0.3 + 0.2 = 0.5
+#   - 0.85 leaves a 0.35 gap above the worst false-positive scenario
+#   - Example refusal: "The VC Corner" vs "The Founders Corner" (shared author 95342670,
+#     name similarity 0.67, total score 0.43 < 0.85 → refused)
 MERGE_THRESHOLD = 0.85
 
 

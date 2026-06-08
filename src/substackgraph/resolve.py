@@ -97,10 +97,12 @@ def _canonicalize(raw_nodes: list[RawNode], audit: AuditLog) -> dict[int, Canoni
                 "merge",
                 canonical_id=pid,
                 members=urls,
+                display_name=canonical[pid].display_name,
                 score=1.0,
                 threshold=MERGE_THRESHOLD,
                 evidence=[{"signal": "same_id", "value": pid, "weight": 1.0}],
                 outcome="merged",
+                reason=f"same publication id {pid}",
             )
     return canonical
 
@@ -127,19 +129,23 @@ def _refuse_gate(canonical: dict[int, CanonicalNode], audit: AuditLog) -> None:
                     audit.log(
                         "refuse",
                         members=[pair[0], pair[1]],
+                        names=[a.display_name, b.display_name],
                         score=round(score, 4),
                         threshold=MERGE_THRESHOLD,
                         evidence=evidence,
                         outcome="kept_separate",
+                        reason=f"score {round(score, 4)} < threshold {MERGE_THRESHOLD}",
                     )
                 else:  # pragma: no cover - not reached by the Episode 1 fixture
                     audit.log(
                         "merge",
                         members=[pair[0], pair[1]],
+                        names=[a.display_name, b.display_name],
                         score=round(score, 4),
                         threshold=MERGE_THRESHOLD,
                         evidence=evidence,
                         outcome="merged",
+                        reason=f"score {round(score, 4)} >= threshold {MERGE_THRESHOLD}",
                     )
 
 
