@@ -213,6 +213,145 @@ def _stub_collab_brief(
     return {"brief": brief, "method": "stub_template"}
 
 
+# ---------------------------------------------------------------------------
+# E4 LLM functions (with stub fallbacks)
+# ---------------------------------------------------------------------------
+
+def generate_rec_quality_insights(pub_name: str, top_recs: list[dict]) -> list[str]:
+    """Generate 1-sentence insight per top recommender."""
+    if _get_api_key() is None:
+        return [f"{r['recommender_label']} (score {r['score']:.2f}): contributes to your growth based on graph signals." for r in top_recs]
+
+    rec_lines = "\n".join(
+        f"- {r['recommender_label']}: score={r['score']:.2f}, selectivity={r['breakdown']['selectivity']:.2f}, "
+        f"cluster_alignment={r['breakdown']['cluster_alignment']:.2f}"
+        for r in top_recs
+    )
+    prompt = (
+        f"You are a Substack growth advisor. For the publication '{pub_name}', these are its top recommenders "
+        f"scored by quality:\n{rec_lines}\n\n"
+        f"For each recommender, write exactly 1 sentence explaining why this recommender helps or hurts growth. "
+        f"Return one sentence per line, no bullets or numbering. Be specific and direct."
+    )
+    try:
+        text = _call(prompt, max_tokens=300)
+        lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+        return lines[:len(top_recs)]
+    except Exception:
+        return [f"{r['recommender_label']}: score {r['score']:.2f}" for r in top_recs]
+
+
+def generate_competitor_insights(pub_name: str, threats: list[dict]) -> list[str]:
+    """Generate 1-sentence action per high-threat competitor."""
+    if _get_api_key() is None:
+        return [f"Consider a recommendation swap with {t['label']} to neutralize competitive overlap." for t in threats]
+
+    threat_lines = "\n".join(f"- {t['label']} (in-degree: {t['in_degree']}, threat: {t['threat_level']})" for t in threats)
+    prompt = (
+        f"You are a Substack growth advisor. '{pub_name}' has these high-threat competitors "
+        f"appearing in their 'Related' zone:\n{threat_lines}\n\n"
+        f"For each, write exactly 1 sentence: what to do about this competitor. Be actionable and specific. "
+        f"One sentence per line, no bullets."
+    )
+    try:
+        text = _call(prompt, max_tokens=200)
+        lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+        return lines[:len(threats)]
+    except Exception:
+        return [f"Monitor {t['label']} and consider a recommendation swap." for t in threats]
+
+
+def generate_paywall_gaps(pub_name: str, pub_titles: list[str], cluster_titles: list[str]) -> list[dict]:
+    """LLM-powered topic gap analysis."""
+    if _get_api_key() is None:
+        return []
+
+    prompt = (
+        f"You are a Substack monetization advisor. Publication '{pub_name}' has these titles/topics: "
+        f"{', '.join(pub_titles[:10])}\n\n"
+        f"Other publications in the same niche cluster cover: {', '.join(cluster_titles[:20])}\n\n"
+        f"What topics does '{pub_name}' NOT cover that its cluster consistently does? "
+        f"These might be good paywall candidates. Return as JSON array of objects with "
+        f"'topic' and 'suggestion' fields. Max 5 items. Return ONLY the JSON array."
+    )
+    try:
+        raw = _call(prompt, max_tokens=300).strip()
+        if raw.startswith("```"):
+            lines = raw.split("\n")
+            raw = "\n".join(lines[1:-1])
+        gaps = json.loads(raw)
+        for g in gaps:
+            g["method"] = "llm_analysis"
+        return gaps[:5]
+    except Exception:
+        return []
+
+
+def generate_churn_insight(pub_name: str, signals: dict) -> str:
+    """LLM insight on churn risk."""
+    if _get_api_key() is None:
+        return f"{pub_name} has a churn risk score of {signals['risk_score']:.2f}."
+
+    prompt = (
+        f"You are a Substack growth advisor. Publication '{pub_name}' has these graph-based churn signals:\n"
+        f"- Risk score: {signals['risk_score']:.2f}\n"
+        f"- Isolation: {signals['signals']['isolation']:.2f}\n"
+        f"- Reciprocity risk: {signals['signals']['reciprocity_risk']:.2f}\n"
+        f"- Centrality risk: {signals['signals']['centrality_risk']:.2f}\n"
+        f"- Recommender churn: {signals['signals']['recommender_churn']:.2f}\n\n"
+        f"In 2-3 sentences, what does this suggest about their growth trajectory and what should they change?"
+    )
+    try:
+        return _call(prompt, max_tokens=200).strip()
+    except Exception:
+        return f"{pub_name} has a churn risk score of {signals['risk_score']:.2f}."
+
+
+def generate_warm_reader_intros(pub_name: str, prospects: list[dict]) -> list[str]:
+    """Generate personalized intro angle for top warm readers."""
+    if _get_api_key() is None:
+        return [f"Reach out to {p['label']} through your {len(p['shared_connections'])} shared connections." for p in prospects]
+
+    prospect_lines = "\n".join(
+        f"- {p['label']}: shares connections with {', '.join(p['shared_connections'][:3])}, in-degree {p['in_degree']}"
+        for p in prospects
+    )
+    prompt = (
+        f"You are a Substack growth advisor. '{pub_name}' has these warm reader prospects "
+        f"(pubs that share social graph but don't yet recommend them):\n{prospect_lines}\n\n"
+        f"For each, write a 1-sentence personalized intro angle. One per line, no bullets."
+    )
+    try:
+        text = _call(prompt, max_tokens=200).strip()
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        return lines[:len(prospects)]
+    except Exception:
+        return [f"Reach out to {p['label']} via shared connections." for p in prospects]
+
+
+def generate_moat_brief(pub_name: str, swaps: list[dict]) -> str:
+    """Generate moat strategy brief."""
+    if _get_api_key() is None:
+        swap_names = [s["label"] for s in swaps[:5]]
+        return f"Moat strategy for {pub_name}: form recommendation swaps with {', '.join(swap_names)} to create a reader circulation loop."
+
+    swap_lines = "\n".join(
+        f"- {s['label']}: moat score {s['moat_score']:.2f}, displaces {s['competitors_displaced']} competitors"
+        for s in swaps[:5]
+    )
+    prompt = (
+        f"You are a Substack growth strategist. '{pub_name}' should form these recommendation swaps "
+        f"to build a cluster moat:\n{swap_lines}\n\n"
+        f"Write a 3-4 sentence moat strategy brief explaining why these swaps work together "
+        f"and how they create a reader circulation loop that blocks competitors."
+    )
+    try:
+        return _call(prompt, max_tokens=300).strip()
+    except Exception:
+        swap_names = [s["label"] for s in swaps[:5]]
+        return f"Form swaps with {', '.join(swap_names)} to build a moat."
+
+
 def _stub_outreach_angles(pub_a_name: str, pub_b_name: str) -> dict:
     return {
         "angles": [

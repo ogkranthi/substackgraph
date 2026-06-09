@@ -18,6 +18,12 @@
     substackgraph live-hooks --pub <url>
     substackgraph collab-brief --pub-a <url> --pub-b <url>
     substackgraph outreach-angles --pub-a <url> --pub-b <url>
+    substackgraph rec-quality --pub <url>
+    substackgraph related-map --pub <url>
+    substackgraph paywall-gaps --pub <url>
+    substackgraph churn-signals --pub <url>
+    substackgraph warm-readers --pub <url>
+    substackgraph build-moat --pub <url>
 """
 
 from __future__ import annotations
@@ -403,6 +409,128 @@ def cmd_outreach_angles(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Episode 4 — Writer Growth Intelligence commands
+# ---------------------------------------------------------------------------
+
+def cmd_rec_quality(args: argparse.Namespace) -> int:
+    result, cache = _resolve_graph(args.db)
+    pub_id = _pub_id_from_url(result.graph, args.pub)
+    if pub_id is None:
+        cache.close()
+        print(f"Could not find publication: {args.pub}", file=sys.stderr)
+        return 1
+    scores = analytics.rec_quality_score(result.graph, pub_id, cache=cache)
+    cache.close()
+    pub_label = result.graph.nodes[pub_id].get("label", str(pub_id))
+    print(f"Recommendation source quality for {pub_label} ({len(scores)} recommenders):\n")
+    for s in scores[:20]:
+        b = s["breakdown"]
+        print(f"  {s['recommender_label']}  score={s['score']}")
+        print(f"    selectivity={b['selectivity']}  cluster={b['cluster_alignment']}  "
+              f"voice={b['voice_compat']}  journey={b['journey_match']}")
+        if "llm_insight" in s:
+            print(f"    >> {s['llm_insight']}")
+    return 0
+
+
+def cmd_related_map(args: argparse.Namespace) -> int:
+    result, cache = _resolve_graph(args.db)
+    cache.close()
+    pub_id = _pub_id_from_url(result.graph, args.pub)
+    if pub_id is None:
+        print(f"Could not find publication: {args.pub}", file=sys.stderr)
+        return 1
+    rmap = analytics.related_map(result.graph, pub_id)
+    pub_label = result.graph.nodes[pub_id].get("label", str(pub_id))
+    print(f"Related-feature competitor map for {pub_label}:\n")
+    if rmap["competitors"]:
+        print(f"  COMPETITORS ({len(rmap['competitors'])}):")
+        for c in rmap["competitors"]:
+            print(f"    [{c['threat_level'].upper()}] {c['label']}  in-degree={c['in_degree']}  action={c['action']}")
+            if "llm_action" in c:
+                print(f"      >> {c['llm_action']}")
+    if rmap["safe_partners"]:
+        print(f"\n  SAFE PARTNERS ({len(rmap['safe_partners'])}):")
+        for p in rmap["safe_partners"]:
+            print(f"    {p['label']}  in-degree={p['in_degree']}  ({p['relationship']})")
+    return 0
+
+
+def cmd_paywall_gaps(args: argparse.Namespace) -> int:
+    result, cache = _resolve_graph(args.db)
+    pub_id = _pub_id_from_url(result.graph, args.pub)
+    if pub_id is None:
+        cache.close()
+        print(f"Could not find publication: {args.pub}", file=sys.stderr)
+        return 1
+    gaps = analytics.paywall_gap_analysis(result.graph, pub_id, cache=cache)
+    cache.close()
+    pub_label = result.graph.nodes[pub_id].get("label", str(pub_id))
+    print(f"Paywall gap analysis for {pub_label} ({len(gaps)} gaps found):\n")
+    for g in gaps:
+        method = g.get("method", "unknown")
+        print(f"  [{method}] {g['topic']}: {g['suggestion']}")
+    return 0
+
+
+def cmd_churn_signals(args: argparse.Namespace) -> int:
+    result, cache = _resolve_graph(args.db)
+    cache.close()
+    pub_id = _pub_id_from_url(result.graph, args.pub)
+    if pub_id is None:
+        print(f"Could not find publication: {args.pub}", file=sys.stderr)
+        return 1
+    signals = analytics.churn_signals(result.graph, pub_id)
+    pub_label = result.graph.nodes[pub_id].get("label", str(pub_id))
+    risk = signals["risk_score"]
+    level = "LOW" if risk < 0.3 else ("MEDIUM" if risk < 0.6 else "HIGH")
+    print(f"Churn signals for {pub_label}:  risk={risk} [{level}]\n")
+    for k, v in signals["signals"].items():
+        print(f"  {k}: {v}")
+    if "llm_insight" in signals:
+        print(f"\n  >> {signals['llm_insight']}")
+    return 0
+
+
+def cmd_warm_readers(args: argparse.Namespace) -> int:
+    result, cache = _resolve_graph(args.db)
+    cache.close()
+    pub_id = _pub_id_from_url(result.graph, args.pub)
+    if pub_id is None:
+        print(f"Could not find publication: {args.pub}", file=sys.stderr)
+        return 1
+    readers = analytics.warm_readers(result.graph, pub_id)
+    pub_label = result.graph.nodes[pub_id].get("label", str(pub_id))
+    print(f"Warm readers for {pub_label} ({len(readers)} prospects):\n")
+    for r in readers[:15]:
+        print(f"  {r['label']}  score={r['score']}  shared={len(r['shared_connections'])}  "
+              f"in-degree={r['in_degree']}")
+        print(f"    {r['why_warm']}")
+        if "llm_intro" in r:
+            print(f"    >> {r['llm_intro']}")
+    return 0
+
+
+def cmd_build_moat(args: argparse.Namespace) -> int:
+    result, cache = _resolve_graph(args.db)
+    cache.close()
+    pub_id = _pub_id_from_url(result.graph, args.pub)
+    if pub_id is None:
+        print(f"Could not find publication: {args.pub}", file=sys.stderr)
+        return 1
+    moat = analytics.build_moat(result.graph, pub_id)
+    pub_label = result.graph.nodes[pub_id].get("label", str(pub_id))
+    print(f"Moat builder for {pub_label} ({len(moat)} swaps recommended):\n")
+    for s in moat:
+        print(f"  {s['label']}  moat_score={s['moat_score']}  "
+              f"competitors_displaced={s['competitors_displaced']}  in-degree={s['in_degree']}")
+        print(f"    {s['rationale']}")
+    if moat and "llm_strategy" in moat[0]:
+        print(f"\n  STRATEGY: {moat[0]['llm_strategy']}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
 
@@ -517,6 +645,37 @@ def build_parser() -> argparse.ArgumentParser:
     p_oa.add_argument("--pub-b", required=True, help="second publication URL")
     _add_db_arg(p_oa)
     p_oa.set_defaults(func=cmd_outreach_angles)
+
+    # Episode 4 — Writer Growth Intelligence commands
+    p_rq = sub.add_parser("rec-quality", help="recommendation source quality score")
+    p_rq.add_argument("--pub", required=True, help="publication URL")
+    _add_db_arg(p_rq)
+    p_rq.set_defaults(func=cmd_rec_quality)
+
+    p_rm = sub.add_parser("related-map", help="related-feature competitor map")
+    p_rm.add_argument("--pub", required=True, help="publication URL")
+    _add_db_arg(p_rm)
+    p_rm.set_defaults(func=cmd_related_map)
+
+    p_pg = sub.add_parser("paywall-gaps", help="paywall gap analysis")
+    p_pg.add_argument("--pub", required=True, help="publication URL")
+    _add_db_arg(p_pg)
+    p_pg.set_defaults(func=cmd_paywall_gaps)
+
+    p_cs = sub.add_parser("churn-signals", help="churn-risk content fingerprint")
+    p_cs.add_argument("--pub", required=True, help="publication URL")
+    _add_db_arg(p_cs)
+    p_cs.set_defaults(func=cmd_churn_signals)
+
+    p_wr = sub.add_parser("warm-readers", help="warm reader scorer")
+    p_wr.add_argument("--pub", required=True, help="publication URL")
+    _add_db_arg(p_wr)
+    p_wr.set_defaults(func=cmd_warm_readers)
+
+    p_bm = sub.add_parser("build-moat", help="moat builder — optimal swap set")
+    p_bm.add_argument("--pub", required=True, help="publication URL")
+    _add_db_arg(p_bm)
+    p_bm.set_defaults(func=cmd_build_moat)
 
     return parser
 

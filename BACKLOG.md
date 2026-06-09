@@ -58,6 +58,21 @@ into these must be parked and surfaced to Kranthi, not implemented.
 | E3-02 | Outreach angle suggestions | `substackgraph outreach-angles --pub-a <url> --pub-b <url>` — LLM-powered via claude-haiku-3-5, stub fallback | done |
 | E3-03 | Delegated outreach (DIBR-gated) | Agent sends outreach — DIBR properties 2 and 3 must be verified before this ships. **PARKED**: draft generation only, no send automation. | parked |
 
+## Episode 4 — Writer Growth Intelligence (COMPLETE)
+
+Real problems writers are screaming about right now. All buildable from existing graph data + content fetch.
+
+| ID | Feature | Description | Owner | Priority | Status |
+|----|---------|-------------|-------|----------|--------|
+| E4-01 | Recommendation source quality score | Which recommenders send converting readers vs. churn bait. Score each incoming recommender by their cluster's paid-conversion proxy (selectivity × audience journey match × voice compat). CLI: `substackgraph rec-quality --pub <url>` | @data | P0 | done |
+| E4-02 | Related-feature competitor map | Show which publications Substack's "Related" algo will surface at the bottom of your posts (graph proximity ≤2 hops, same cluster). Highlight which ones are competitors vs. potential swap partners. CLI: `substackgraph related-map --pub <url>` | @data | P0 | done |
+| E4-03 | Paywall gap analysis | Fetch post titles from cache for all pubs in your cluster. LLM identifies topics consistently behind paywalls in your niche that you're giving away free. CLI: `substackgraph paywall-gaps --pub <url>` | @data | P1 | done |
+| E4-04 | Churn-risk content fingerprint | Cluster-level analysis: which content patterns (topics, post frequency, post length proxies from titles) correlate with high churn signals (low recommendation reciprocity, isolated nodes, shrinking edges). CLI: `substackgraph churn-signals --pub <url>` | @data | P1 | done |
+| E4-05 | Warm reader scorer | Free subscribers who follow multiple paid pubs in your cluster = high-intent. Score each node's audience by how many paid-cluster pubs they're connected to. CLI: `substackgraph warm-readers --pub <url>` | @data | P2 | done |
+| E4-06 | Moat builder | Given your publication, identify a set of 3-5 recommendation swaps that would create a cluster moat — readers enter your neighborhood and cycle between you and swap partners rather than leaking to competitors. CLI: `substackgraph build-moat --pub <url>` | @data | P1 | done |
+| E4-07 | Web UI: Writer dashboard | Surface E4-01 through E4-06 in the web app for the logged-in writer's own publication. New "Your Growth" panel in the SPA. | @data | P1 | done |
+| E4-08 | Tests + BACKLOG update | Full test coverage for E4-01 through E4-06. All stubs must pass without API key. Mark tasks done. | @qa | P0 | done |
+
 ---
 
 _Conventions live in `CLAUDE.md`. Each agent's autonomous workflow lives in its own AGENT.md

@@ -23,9 +23,10 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
-from . import config
+from . import analytics, config
 from .auditlog import AuditLog
 from .cache import Cache
+from .cli import _pub_id_from_url
 from .client import SubstackClient, normalize_url
 from .crawl import crawl, load_raw_graph
 from .naive_graph import build_naive
@@ -355,6 +356,44 @@ def api_status():
     })
 
 
+@app.get("/api/growth")
+def api_growth(pub: str = Query(...)):
+    """Return all 6 E4 growth intelligence signals for a publication."""
+    cache = _open_cache()
+    try:
+        nodes, edges = load_raw_graph(cache)
+        audit = AuditLog()
+        result = resolve(nodes, edges, audit=audit)
+        graph = result.graph
+
+        pub_id = _pub_id_from_url(graph, pub)
+        if pub_id is None:
+            return JSONResponse({"error": f"Publication not found: {pub}"}, status_code=404)
+
+        rec_q = analytics.rec_quality_score(graph, pub_id, cache=cache)
+        rel_map = analytics.related_map(graph, pub_id)
+        pw_gaps = analytics.paywall_gap_analysis(graph, pub_id, cache=cache)
+        churn = analytics.churn_signals(graph, pub_id)
+        warm = analytics.warm_readers(graph, pub_id)
+        moat = analytics.build_moat(graph, pub_id)
+    finally:
+        cache.close()
+
+    return JSONResponse({
+        "pub": graph.nodes[pub_id].get("label", str(pub_id)),
+        "rec_quality": rec_q[:5],
+        "related_map": {
+            "competitors": rel_map["competitors"][:5],
+            "safe_partners": rel_map["safe_partners"][:5],
+            "competitor_count": len(rel_map["competitors"]),
+        },
+        "paywall_gaps": pw_gaps[:5],
+        "churn_signals": churn,
+        "warm_readers": warm[:5],
+        "moat_plan": moat[:5],
+    })
+
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
     return "User-agent: *\nDisallow: /crawl\n"
@@ -631,6 +670,7 @@ kbd{background:var(--surface3);border:1px solid var(--border2);border-radius:4px
 
   <button class="hbtn" id="btn-board" onclick="openLeft('board')">&#9776; Leaderboard</button>
   <button class="hbtn" id="btn-dec" onclick="openLeft('dec')">&#9783; Decisions</button>
+  <button class="hbtn" id="btn-growth" onclick="openLeft('growth')">&#9650; Growth</button>
 
   <div class="toggle-wrap">
     <button class="toggle-btn active-resolved" id="btn-resolved" onclick="setMode('resolved')">&#10022; Resolved</button>
@@ -677,7 +717,7 @@ kbd{background:var(--surface3);border:1px solid var(--border2);border-radius:4px
       <button id="cm-cluster" onclick="setColorMode('cluster')">Cluster</button>
     </div>
     <div id="legend-body" style="margin-top:9px"></div>
-    <div id="legend-hint"><kbd>/</kbd> search &nbsp; <kbd>r</kbd> fit &nbsp; <kbd>esc</kbd> close<br><kbd>1</kbd> resolved &nbsp; <kbd>2</kbd> naive &nbsp; <kbd>b</kbd> board &nbsp; <kbd>d</kbd> decisions</div>
+    <div id="legend-hint"><kbd>/</kbd> search &nbsp; <kbd>r</kbd> fit &nbsp; <kbd>esc</kbd> close<br><kbd>1</kbd> resolved &nbsp; <kbd>2</kbd> naive &nbsp; <kbd>b</kbd> board &nbsp; <kbd>d</kbd> decisions &nbsp; <kbd>g</kbd> growth</div>
   </div>
 </div>
 
@@ -689,6 +729,7 @@ kbd{background:var(--surface3);border:1px solid var(--border2);border-radius:4px
   <div class="tabs">
     <button class="tab on" id="tab-board" onclick="switchTab('board')">Top publications</button>
     <button class="tab" id="tab-dec" onclick="switchTab('dec')">Decision log</button>
+    <button class="tab" id="tab-growth" onclick="switchTab('growth')">Growth</button>
     <button class="ph-close" style="padding:0 12px" onclick="openLeft(null)">&#10005;</button>
   </div>
   <div id="view-board">
@@ -701,6 +742,16 @@ kbd{background:var(--surface3);border:1px solid var(--border2);border-radius:4px
   <div id="view-dec" style="display:none">
     <div class="dfilter" id="dec-filter"></div>
     <div id="dec-list"></div>
+  </div>
+  <div id="view-growth" style="display:none">
+    <div style="padding:14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">
+      Select a publication node to see its growth intelligence, or enter a URL below.
+    </div>
+    <div style="padding:10px 14px">
+      <input id="growth-pub" placeholder="Publication URL or name…" style="width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:7px;color:var(--text);font:13px Inter,sans-serif;padding:7px 10px;outline:none"
+        onkeydown="if(event.key==='Enter')loadGrowth(this.value)">
+    </div>
+    <div id="growth-content" style="padding:0 14px 14px"></div>
   </div>
 </div>
 
@@ -1016,7 +1067,7 @@ function closePanel(){document.getElementById('panel').classList.remove('open');
 function openLeft(which){
   if(which===null||(leftOpen&&leftTab===which)){
     leftOpen=null;document.getElementById('board').classList.remove('open');
-    document.getElementById('btn-board').classList.remove('on');document.getElementById('btn-dec').classList.remove('on');
+    ['board','dec','growth'].forEach(function(t){document.getElementById('btn-'+t).classList.remove('on');});
     return;
   }
   leftOpen=true;switchTab(which);
@@ -1024,12 +1075,11 @@ function openLeft(which){
 }
 function switchTab(which){
   leftTab=which;
-  document.getElementById('tab-board').className='tab'+(which==='board'?' on':'');
-  document.getElementById('tab-dec').className='tab'+(which==='dec'?' on':'');
-  document.getElementById('view-board').style.display=which==='board'?'':'none';
-  document.getElementById('view-dec').style.display=which==='dec'?'':'none';
-  document.getElementById('btn-board').classList.toggle('on',which==='board');
-  document.getElementById('btn-dec').classList.toggle('on',which==='dec');
+  ['board','dec','growth'].forEach(function(t){
+    document.getElementById('tab-'+t).className='tab'+(which===t?' on':'');
+    document.getElementById('view-'+t).style.display=which===t?'':'none';
+    document.getElementById('btn-'+t).classList.toggle('on',which===t);
+  });
   if(which==='dec'&&!decRecords)loadDecisions();
 }
 function setBoardSort(s){boardSort=s;
@@ -1138,6 +1188,67 @@ function showLoading(v,msg){var el=document.getElementById('loading');el.style.d
 function showEmpty(v){document.getElementById('empty').className=v?'show':'';}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
+/* ── growth panel ── */
+function loadGrowth(pubInput){
+  var el=document.getElementById('growth-content');
+  if(!pubInput){el.innerHTML='<div style="color:#fb7185;padding:8px 0">Enter a publication URL or name.</div>';return;}
+  // Resolve name to URL if needed
+  var url=pubInput;
+  if(url.indexOf('http')!==0){
+    var rid=resolveHandle(pubInput);
+    if(rid!==null&&byId[rid]){url=(byId[rid].domains||[])[0]||pubInput;}
+    else{el.innerHTML='<div style="color:#fb7185;padding:8px 0">Publication not found in graph.</div>';return;}
+  }
+  el.innerHTML='<div style="color:var(--text3);padding:8px 0">Loading growth data\u2026</div>';
+  fetch('/api/growth?pub='+encodeURIComponent(url)).then(function(r){return r.json();}).then(function(d){
+    if(d.error){el.innerHTML='<div style="color:#fb7185;padding:8px 0">'+esc(d.error)+'</div>';return;}
+    var h='<div style="margin-top:8px">';
+    h+='<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px">'+esc(d.pub)+'</div>';
+
+    // Rec Quality
+    h+='<div class="ps"><h3>Rec Quality <span class="cnt">'+(d.rec_quality||[]).length+'</span></h3>';
+    (d.rec_quality||[]).slice(0,3).forEach(function(r){
+      var col=r.score>=0.6?'var(--green)':(r.score>=0.3?'var(--amber)':'var(--rose)');
+      h+='<div class="srow"><span class="sl">'+esc(r.recommender_label)+'</span><span class="sv" style="color:'+col+'">'+r.score.toFixed(2)+'</span></div>';
+    });h+='</div>';
+
+    // Related Threats
+    h+='<div class="ps"><h3>Related Threats <span class="cnt">'+(d.related_map.competitor_count||0)+'</span></h3>';
+    var topThreat=(d.related_map.competitors||[])[0];
+    if(topThreat)h+='<div class="srow"><span class="sl">Top: '+esc(topThreat.label)+'</span><span class="sv" style="color:var(--rose)">'+topThreat.threat_level+'</span></div>';
+    else h+='<div style="font-size:12px;color:var(--text3)">No competitors detected</div>';
+    h+='</div>';
+
+    // Paywall Gaps
+    h+='<div class="ps"><h3>Paywall Gaps <span class="cnt">'+(d.paywall_gaps||[]).length+'</span></h3>';
+    (d.paywall_gaps||[]).slice(0,3).forEach(function(g){
+      h+='<div style="font-size:12px;color:var(--text2);padding:3px 0">'+esc(g.topic)+': '+esc(g.suggestion||'')+'</div>';
+    });h+='</div>';
+
+    // Churn Signals
+    var cs=d.churn_signals||{};var risk=cs.risk_score||0;
+    var rCol=risk<0.3?'var(--green)':(risk<0.6?'var(--amber)':'var(--rose)');
+    h+='<div class="ps"><h3>Churn Risk</h3>';
+    h+='<div class="srow"><span class="sl">Risk score</span><span class="sv" style="color:'+rCol+'">'+risk.toFixed(2)+'</span></div>';
+    h+='</div>';
+
+    // Warm Readers
+    h+='<div class="ps"><h3>Warm Readers <span class="cnt">'+(d.warm_readers||[]).length+'</span></h3>';
+    (d.warm_readers||[]).slice(0,3).forEach(function(w){
+      h+='<div class="srow"><span class="sl">'+esc(w.label)+'</span><span class="sv">'+w.score.toFixed(2)+'</span></div>';
+    });h+='</div>';
+
+    // Moat Plan
+    h+='<div class="ps"><h3>Moat Plan <span class="cnt">'+(d.moat_plan||[]).length+' swaps</span></h3>';
+    (d.moat_plan||[]).forEach(function(s){
+      h+='<div style="font-size:12px;color:var(--text2);padding:3px 0">'+esc(s.label)+' (score '+s.moat_score.toFixed(2)+', displaces '+s.competitors_displaced+')</div>';
+    });h+='</div>';
+
+    h+='</div>';
+    el.innerHTML=h;
+  }).catch(function(e){el.innerHTML='<div style="color:#fb7185;padding:8px 0">Error: '+esc(String(e))+'</div>';});
+}
+
 document.addEventListener('keydown',function(e){
   var tag=document.activeElement.tagName;
   if(e.key==='Escape'){closePanel();openLeft(null);var s=document.getElementById('search');s.value='';onSearch('');}
@@ -1145,6 +1256,7 @@ document.addEventListener('keydown',function(e){
   if(e.key==='r'&&tag!=='INPUT'&&network)network.fit({animation:{duration:600}});
   if(e.key==='b'&&tag!=='INPUT')openLeft('board');
   if(e.key==='d'&&tag!=='INPUT')openLeft('dec');
+  if(e.key==='g'&&tag!=='INPUT')openLeft('growth');
   if(e.key==='1'&&tag!=='INPUT')setMode('resolved');
   if(e.key==='2'&&tag!=='INPUT')setMode('naive');
 });
