@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from .cache import Cache
 from .client import SubstackClient, normalize_url
-from .model import RawEdge, RawNode
+from .model import PublicationNotFound, RawEdge, RawNode
 from .ratelimit import RateLimiter
+
+_META_KEYS = ("id", "subdomain", "custom_domain", "name", "author_id")
 
 
 def crawl(seed_url: str, hops: int, cache: Cache, rate_limiter: RateLimiter, client: SubstackClient) -> None:
@@ -17,6 +19,8 @@ def crawl(seed_url: str, hops: int, cache: Cache, rate_limiter: RateLimiter, cli
 
     Meta is fetched for every visited node (so it is resolvable). Recommendations are fetched
     for nodes within the hop budget (depth < hops) so edges span the requested number of hops.
+    The recommendations payload also carries each neighbor's identity, so we write it through
+    to that neighbor's `meta:` row — grounding the neighbor without a separate search request.
     """
     seed = normalize_url(seed_url)
     frontier = {seed}
@@ -32,13 +36,44 @@ def crawl(seed_url: str, hops: int, cache: Cache, rate_limiter: RateLimiter, cli
             cache.cached_call(f"meta:{url}", url, lambda u=url: client.get_metadata(u), rate_limiter)
 
             if depth < hops:
-                row = cache.cached_call(
-                    f"recs:{url}", url, lambda u=url: client.get_recommendation_urls(u), rate_limiter
-                )
-                for neighbor in row.payload or []:
-                    next_frontier.add(normalize_url(neighbor))
+                for neighbor in _fetch_recs(url, cache, rate_limiter, client):
+                    next_frontier.add(neighbor)
 
         frontier = next_frontier
+
+
+def _fetch_recs(url: str, cache: Cache, rate_limiter: RateLimiter, client: SubstackClient) -> list[str]:
+    """Cache-first recommendations fetch. Stores the `recs:` URL list (unchanged format) and
+    writes identity through to each neighbor's `meta:` row from the same payload."""
+    key = f"recs:{url}"
+    existing = cache.get(key)
+    if existing is not None:
+        return [normalize_url(u) for u in (existing.payload or [])]
+
+    rate_limiter.acquire()
+    try:
+        rich = client.get_recommendations_meta(url)
+    except PublicationNotFound:
+        cache.put(key, url, "http_404", None)
+        return []
+    except Exception:  # noqa: BLE001 — record the failure, don't crash the crawl
+        cache.put(key, url, "error", None)
+        return []
+
+    rec_urls: list[str] = []
+    for obj in rich:
+        ru = normalize_url(obj.get("url") or "")
+        if not ru:
+            continue
+        rec_urls.append(ru)
+        # Ground the neighbor from the recommendations payload (no extra request). Don't
+        # clobber an existing meta row (e.g. the seed's own searched metadata).
+        has_identity = any(obj.get(k) is not None for k in _META_KEYS)
+        if has_identity and cache.get(f"meta:{ru}") is None:
+            cache.put(f"meta:{ru}", ru, "ok", {"url": ru, **{k: obj.get(k) for k in _META_KEYS}})
+
+    cache.put(key, url, "ok", rec_urls)
+    return rec_urls
 
 
 def load_raw_graph(cache: Cache) -> tuple[list[RawNode], list[RawEdge]]:

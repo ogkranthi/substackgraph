@@ -99,14 +99,59 @@ class SubstackClient:
         return meta
 
     def get_recommendation_urls(self, url: str) -> list[str]:
-        newsletter = self._newsletter(url)
-        recs = newsletter.get_recommendations() or []
-        urls: list[str] = []
-        for rec in recs:
-            rec_url = getattr(rec, "url", None)
-            if rec_url:
-                urls.append(normalize_url(rec_url))
-        return urls
+        return [rec["url"] for rec in self.get_recommendations_meta(url) if rec.get("url")]
+
+    def get_recommendations_meta(self, url: str) -> list[dict]:
+        """Recommendations for `url` WITH the identity-bearing fields from the payload.
+
+        The `/api/v1/recommendations/from/{id}` response carries a full
+        `recommendedPublication` object per edge (id / subdomain / custom_domain / name /
+        author_id). The library's own `get_recommendations()` discards everything but the
+        URL; we keep it, so a single recommendations request grounds the identity of every
+        neighbor — no per-node search call, fewer requests, and the resolver gets real
+        publication ids to merge on. Field names are isolated here on purpose (CLAUDE.md).
+        """
+        nurl = normalize_url(url)
+        newsletter = self._newsletter(nurl)
+        try:
+            pub_id = newsletter._resolve_publication_id()  # discovery search → pub id
+        except Exception:  # noqa: BLE001 — no id means no recommendations to read
+            return []
+        if not pub_id:
+            return []
+
+        import requests as _req  # noqa: PLC0415 — guaranteed via substack-api dep
+        from substack_api.newsletter import HEADERS  # noqa: PLC0415
+
+        endpoint = f"{nurl}/api/v1/recommendations/from/{pub_id}"
+        resp = _req.get(endpoint, headers=HEADERS, timeout=30)
+        resp.raise_for_status()
+
+        out: list[dict] = []
+        for rec in resp.json() or []:
+            pub = rec.get("recommendedPublication", {}) or {}
+            subdomain = pub.get("subdomain")
+            custom_domain = pub.get("custom_domain")
+            if custom_domain:
+                target = custom_domain if "://" in str(custom_domain) else f"https://{custom_domain}"
+            elif subdomain:
+                target = f"https://{subdomain}.substack.com"
+            else:
+                continue
+            author = pub.get("author_id")
+            if author is None:
+                authors = pub.get("authors") or []  # author_id is sometimes nested
+                if authors and isinstance(authors[0], dict):
+                    author = authors[0].get("id")
+            out.append({
+                "url": normalize_url(target),
+                "id": pub.get("id"),
+                "subdomain": subdomain,
+                "custom_domain": custom_domain,
+                "name": pub.get("name"),
+                "author_id": author,
+            })
+        return out
 
     def _newsletter(self, url: str):
         try:
